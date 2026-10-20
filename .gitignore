@@ -1,0 +1,14 @@
+# Local login records contain password hashes and user email addresses.
+/users.json
+/users_meta.json
+/seed_users.py
+
+# Local Python artifacts and developer environment files.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+.DS_Store

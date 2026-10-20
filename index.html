@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d1117">
+  <meta name="description" content="Free email breach and password exposure checks with AlphaProtector.">
+  <title>AlphaProtector</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/dashboard.css">
+  <script src="/supabase-config.js"></script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <main class="auth-screen" id="auth-screen">
+    <section class="auth-card" aria-labelledby="auth-title">
+      <a class="brand auth-brand" href="#overview"><span class="shield">⬟</span><span>AlphaProtector</span></a>
+      <p class="eyebrow">SECURE PERSONAL WORKSPACE</p>
+      <h1 id="auth-title">Sign in to AlphaProtector</h1>
+      <p class="auth-copy">Sign in to open your security dashboard and tools.</p>
+      <div id="auth-setup" class="auth-message warning" hidden></div>
+      <form id="auth-form" class="auth-form" novalidate>
+        <label id="name-label" for="auth-name" hidden>Your name</label>
+        <input id="auth-name" name="name" type="text" autocomplete="name" placeholder="Your name" hidden>
+        <label for="auth-email">Email address</label>
+        <input id="auth-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+        <label for="auth-password">Password</label>
+        <input id="auth-password" name="password" type="password" autocomplete="current-password" placeholder="Password" required>
+        <button class="primary-button" id="auth-submit" type="submit">Sign in</button>
+      </form>
+      <button class="auth-link" id="auth-mode" type="button">Create an account</button>
+      <button class="auth-link" id="auth-reset" type="button">Forgot password?</button>
+      <div id="auth-status" class="auth-message" role="status" aria-live="polite" hidden></div>
+    </section>
+  </main>
+  <div class="app-shell" id="app-shell" hidden>
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#overview" aria-label="AlphaProtector home"><span class="shield">⬟</span><span>AlphaProtector</span></a>
+      <p class="nav-label">Security tools</p>
+      <nav aria-label="Main navigation">
+        <button class="nav-button active" data-page="overview">Login Monitoring</button>
+        <button class="nav-button" data-page="breach">Free Email Breach Check</button>
+        <button class="nav-button" data-page="footprint">Behind the Email</button>
+        <button class="nav-button" data-page="epieos">Epieos Email OSINT</button>
+        <button class="nav-button" data-page="password">Password Tester</button>
+      </nav>
+      <p class="sidebar-note">Free community checks. No paid API keys.</p>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <button class="mobile-menu" id="menu-toggle" aria-label="Toggle navigation" aria-expanded="false">☰</button>
+        <div><span class="eyebrow">PERSONAL SECURITY WORKSPACE</span><h1 id="page-title">Login monitoring dashboard</h1></div>
+        <div class="user-actions"><span class="user-greeting">Signed in as <strong id="user-name"></strong></span><button class="secondary-button" id="sign-out" type="button">Sign out</button><span class="online"><span></span> READY</span></div>
+      </header>
+
+      <section class="page active" id="page-overview" aria-labelledby="page-title">
+        <div class="dashboard-heading"><div><p class="eyebrow">AUTHENTICATION ACTIVITY</p><h2>Security Monitoring Dashboard</h2><p>Review login outcomes, repeated failed attempts, and the sample event log.</p></div><span class="sample-badge">SAMPLE DATA · NOT LIVE LOGS</span></div>
+        <div class="metrics-grid">
+          <article class="metric-card"><span>Total logins</span><strong id="metric-total">0</strong></article>
+          <article class="metric-card"><span>Successful logins</span><strong class="metric-green" id="metric-success">0</strong></article>
+          <article class="metric-card"><span>Failed logins</span><strong class="metric-red" id="metric-failed">0</strong></article>
+          <article class="metric-card"><span>Suspicious IPs</span><strong class="metric-gold" id="metric-suspicious">0</strong></article>
+        </div>
+        <div class="charts-grid">
+          <article class="chart-panel"><div class="chart-heading"><div><h3>Login results overview</h3><p>Successful versus failed sign-in attempts</p></div></div><div id="login-chart" class="bar-chart" role="img" aria-label="Login results graph"></div></article>
+          <article class="chart-panel"><div class="chart-heading"><div><h3>Failed logins per IP address</h3><p>Addresses meeting the threshold are highlighted</p></div></div><div id="ip-chart" class="bar-chart" role="img" aria-label="Failed logins per IP graph"></div></article>
+        </div>
+        <div class="dashboard-lower">
+          <article class="chart-panel"><div class="chart-heading"><div><h3>Failed attempts by username</h3><p>Count for each account name in the sample log</p></div></div><div id="user-failures" class="user-failure-list"></div></article>
+          <article class="alert-panel"><p class="eyebrow">THREAT DETECTION</p><h3>Security alerts</h3><p class="alert-rule">Rule: IPs with 5 or more failed attempts are flagged.</p><label class="filter-label" for="risk-filter">Filter risk level</label><select id="risk-filter"><option>All</option><option>High</option><option>Medium</option><option>Low</option></select><div id="alerts-list"></div></article>
+        </div>
+        <section class="records-panel">
+          <div class="records-heading"><div><p class="eyebrow">EVENT HISTORY</p><h3>Login records</h3><p>These are the original sample records from the prototype.</p></div><label class="filter-label" for="result-filter">Show <select id="result-filter"><option>All</option><option>Success</option><option>Failed</option></select></label></div>
+          <button class="secondary-button" id="records-toggle" type="button" aria-expanded="false">Show sample login records</button>
+          <div class="table-wrap" id="records-wrap" hidden><table><thead><tr><th>Time</th><th>Username</th><th>IP address</th><th>Result</th></tr></thead><tbody id="records-body"></tbody></table></div>
+        </section>
+        <div class="section-heading"><div><p class="eyebrow">SECURITY TOOLS</p><h2>Choose a check</h2></div><p class="muted">Each tool opens its own workspace.</p></div>
+        <div class="tool-grid">
+          <button class="tool-card" data-page="breach"><span class="tool-icon">✉</span><span class="tool-title">Email breach check</span><span class="tool-description">Search the free XposedOrNot breach index.</span><span class="card-action">Open tool <b>→</b></span></button>
+          <button class="tool-card" data-page="footprint"><span class="tool-icon">⌕</span><span class="tool-title">Behind the Email</span><span class="tool-description">Open the provider’s public email search.</span><span class="card-action">Open tool <b>→</b></span></button>
+          <button class="tool-card" data-page="epieos"><span class="tool-icon">◎</span><span class="tool-title">Epieos</span><span class="tool-description">Open the Epieos reverse email OSINT site.</span><span class="card-action">Open tool <b>→</b></span></button>
+          <button class="tool-card" data-page="password"><span class="tool-icon">⌑</span><span class="tool-title">Password tester</span><span class="tool-description">Score locally and check HIBP’s free password corpus.</span><span class="card-action">Open tool <b>→</b></span></button>
+        </div>
+        <div class="notice"><strong>Monitoring note:</strong> The login charts above use sample data only. Connect your real authentication system to a backend log source before using them for live monitoring.</div>
+        <div class="notice"><strong>Privacy:</strong> Email breach checks send the email address to XposedOrNot. Password strength scoring stays in your browser; the breach check sends only a short hash prefix to HIBP.</div>
+      </section>
+
+      <section class="page" id="page-breach" hidden>
+        <div class="page-intro"><p class="eyebrow">FREE COMMUNITY API</p><h2>Email breach check</h2><p>Search XposedOrNot’s public dataset for known email breach matches. No API key or signup is needed.</p></div>
+        <form class="panel" id="breach-form" novalidate>
+          <label for="breach-email">Email address</label>
+          <div class="input-row"><input id="breach-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required><button class="primary-button" type="submit" id="breach-submit">Check breaches</button></div>
+          <p class="field-note">The address is sent directly from your browser to XposedOrNot. Their free endpoint is rate-limited to 25 checks per hour and 100 per day per IP.</p>
+        </form>
+        <div class="result" id="breach-result" role="status" aria-live="polite" hidden></div>
+        <div class="provider-link"><span>Want to check another database?</span><a class="secondary-button" href="https://haveibeenpwned.com/" target="_blank" rel="noopener noreferrer">Open Have I Been Pwned ↗</a></div>
+        <p class="fine-print">A clean result only means no match was found in this service’s current dataset; it cannot prove an address was never exposed.</p>
+      </section>
+
+      <section class="page" id="page-footprint" hidden>
+        <div class="page-intro"><p class="eyebrow">PUBLIC WEB SEARCH</p><h2>Behind the Email</h2><p>Open the provider’s site to search for public profile signals associated with an email address.</p></div>
+        <div class="panel link-panel"><div class="tool-icon">⌕</div><div><h3>Continue to Behind the Email</h3><p>AlphaProtector does not send your address on this page or require an API token. The provider’s free access, account requirements, and search limits are controlled by that site.</p><a class="primary-button inline-button" href="https://behindtheemail.com/" target="_blank" rel="noopener noreferrer">Open Behind the Email ↗</a></div></div>
+      </section>
+
+      <section class="page" id="page-epieos" hidden>
+        <div class="page-intro"><p class="eyebrow">EMAIL OSINT</p><h2>Epieos</h2><p>You may have meant Epieos by “Zepios.” Open its site to use the provider’s own email search tools.</p></div>
+        <div class="panel link-panel"><div class="tool-icon">◎</div><div><h3>Continue to Epieos</h3><p>This button only opens the provider. AlphaProtector does not send an email address. The provider controls its account requirements and any free-use limits.</p><a class="primary-button inline-button" href="https://epieos.com/" target="_blank" rel="noopener noreferrer">Open Epieos ↗</a></div></div>
+      </section>
+
+      <section class="page" id="page-password" hidden>
+        <div class="page-intro"><p class="eyebrow">LOCAL SCORE + FREE BREACH CHECK</p><h2>Password tester</h2><p>Strength scoring runs locally. The optional exposure check uses HIBP’s free Pwned Passwords range API.</p></div>
+        <form class="panel" id="password-form" novalidate>
+          <label for="password-input">Password to test</label>
+          <div class="input-row"><input id="password-input" name="password" type="password" autocomplete="new-password" placeholder="Enter a password to test" required><button class="primary-button" type="submit" id="password-submit">Test password</button></div>
+          <p class="field-note">The password itself stays in this browser. The optional lookup sends only the first five characters of its SHA-1 hash to HIBP after you press the button.</p>
+        </form>
+        <div class="result" id="password-result" role="status" aria-live="polite" hidden></div>
+        <p class="fine-print">Do not enter a password you currently use for a sensitive account. This tool provides an estimate, not a guarantee of safety.</p>
+      </section>
+
+      <footer>AlphaProtector · Free community services · Use these checks only for accounts you are authorized to assess.</footer>
+    </main>
+  </div>
+</body>
+</html>
