@@ -9,26 +9,26 @@ const pages = {
 };
 
 const sampleRecords = [
-  ["2024-06-01 08:02:11", "alice", "192.168.1.10", "Success"],
-  ["2024-06-01 08:14:33", "bob", "192.168.1.22", "Success"],
-  ["2024-06-01 08:31:05", "carol", "10.0.0.5", "Success"],
-  ["2024-06-01 08:45:50", "dave", "203.0.113.99", "Failed"],
-  ["2024-06-01 08:46:12", "admin", "203.0.113.99", "Failed"],
-  ["2024-06-01 08:46:44", "root", "203.0.113.99", "Failed"],
-  ["2024-06-01 08:47:01", "admin", "203.0.113.99", "Failed"],
-  ["2024-06-01 08:47:29", "alice", "203.0.113.99", "Failed"],
-  ["2024-06-01 09:03:18", "eve", "172.16.0.8", "Success"],
-  ["2024-06-01 09:15:44", "frank", "192.168.1.44", "Success"],
-  ["2024-06-01 09:28:02", "grace", "10.0.0.12", "Success"],
-  ["2024-06-01 09:41:57", "henry", "192.168.1.55", "Failed"],
-  ["2024-06-01 10:05:30", "isabel", "10.0.0.21", "Success"],
-  ["2024-06-01 10:22:14", "jack", "172.16.0.33", "Success"],
-  ["2024-06-01 10:38:49", "karen", "192.168.1.66", "Success"],
-  ["2024-06-01 11:00:05", "liam", "10.0.0.30", "Failed"],
-  ["2024-06-01 11:17:33", "mia", "192.168.1.77", "Success"],
-  ["2024-06-01 11:35:20", "noah", "172.16.0.50", "Success"],
-  ["2024-06-01 11:52:08", "olivia", "10.0.0.44", "Success"],
-  ["2024-06-01 12:10:47", "peter", "192.168.1.88", "Success"],
+  ["2024-06-01 08:02:11", "alice", "Success"],
+  ["2024-06-01 08:14:33", "bob", "Success"],
+  ["2024-06-01 08:31:05", "carol", "Success"],
+  ["2024-06-01 08:45:50", "dave", "Failed"],
+  ["2024-06-01 08:46:12", "admin", "Failed"],
+  ["2024-06-01 08:46:44", "root", "Failed"],
+  ["2024-06-01 08:47:01", "admin", "Failed"],
+  ["2024-06-01 08:47:29", "alice", "Failed"],
+  ["2024-06-01 09:03:18", "eve", "Success"],
+  ["2024-06-01 09:15:44", "frank", "Success"],
+  ["2024-06-01 09:28:02", "grace", "Success"],
+  ["2024-06-01 09:41:57", "henry", "Failed"],
+  ["2024-06-01 10:05:30", "isabel", "Success"],
+  ["2024-06-01 10:22:14", "jack", "Success"],
+  ["2024-06-01 10:38:49", "karen", "Success"],
+  ["2024-06-01 11:00:05", "liam", "Failed"],
+  ["2024-06-01 11:17:33", "mia", "Success"],
+  ["2024-06-01 11:35:20", "noah", "Success"],
+  ["2024-06-01 11:52:08", "olivia", "Success"],
+  ["2024-06-01 12:10:47", "peter", "Success"],
 ];
 
 function appendCell(row, value, className = "") {
@@ -59,20 +59,19 @@ function chartRow(container, label, count, max, kind, detail = "") {
   container.append(row);
 }
 
-const failedByIp = new Map();
 const failedByUser = new Map();
-const successfulCount = sampleRecords.filter((record) => record[3] === "Success").length;
+const successfulCount = sampleRecords.filter((record) => record[2] === "Success").length;
 const failedCount = sampleRecords.length - successfulCount;
-for (const [, username, ip, result] of sampleRecords) {
+for (const [, username, result] of sampleRecords) {
   if (result !== "Failed") continue;
-  failedByIp.set(ip, (failedByIp.get(ip) || 0) + 1);
   failedByUser.set(username, (failedByUser.get(username) || 0) + 1);
 }
-const suspiciousIpCounts = [...failedByIp.entries()].filter(([, count]) => count >= 5).sort((a, b) => b[1] - a[1]);
+const repeatedFailureThreshold = 2;
+const repeatedFailureCounts = [...failedByUser.entries()].filter(([, count]) => count >= repeatedFailureThreshold).sort((a, b) => b[1] - a[1]);
 
 function riskLevel(count) {
-  if (count >= 10) return "High";
-  if (count >= 7) return "Medium";
+  if (count >= 5) return "High";
+  if (count >= 3) return "Medium";
   return "Low";
 }
 
@@ -80,16 +79,16 @@ function renderDashboard() {
   document.getElementById("metric-total").textContent = String(sampleRecords.length);
   document.getElementById("metric-success").textContent = String(successfulCount);
   document.getElementById("metric-failed").textContent = String(failedCount);
-  document.getElementById("metric-suspicious").textContent = String(suspiciousIpCounts.length);
+  document.getElementById("metric-suspicious").textContent = String(repeatedFailureCounts.length);
 
   const resultsChart = document.getElementById("login-chart");
   chartRow(resultsChart, "Successful", successfulCount, sampleRecords.length, "bar-success", "Successful login events");
   chartRow(resultsChart, "Failed", failedCount, sampleRecords.length, "bar-failed", "Failed login events");
 
-  const ipChart = document.getElementById("ip-chart");
-  const ipEntries = [...failedByIp.entries()].sort((a, b) => b[1] - a[1]);
-  const maxIpCount = Math.max(...ipEntries.map(([, count]) => count), 1);
-  ipEntries.forEach(([ip, count]) => chartRow(ipChart, ip, count, maxIpCount, count >= 5 ? "bar-failed" : "bar-neutral", `${count} failed attempts`));
+  const accountChart = document.getElementById("account-chart");
+  const accountEntries = [...failedByUser.entries()].sort((a, b) => b[1] - a[1]);
+  const maxAccountCount = Math.max(...accountEntries.map(([, count]) => count), 1);
+  accountEntries.forEach(([username, count]) => chartRow(accountChart, username, count, maxAccountCount, count >= repeatedFailureThreshold ? "bar-failed" : "bar-neutral", `${count} failed attempts`));
 
   const userList = document.getElementById("user-failures");
   [...failedByUser.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).forEach(([username, count]) => {
@@ -112,7 +111,7 @@ function renderAlerts() {
   const container = document.getElementById("alerts-list");
   const filter = document.getElementById("risk-filter").value;
   container.replaceChildren();
-  const entries = suspiciousIpCounts.filter(([, count]) => filter === "All" || riskLevel(count) === filter);
+  const entries = repeatedFailureCounts.filter(([, count]) => filter === "All" || riskLevel(count) === filter);
   if (!entries.length) {
     const empty = document.createElement("p");
     empty.className = "empty-state";
@@ -120,13 +119,13 @@ function renderAlerts() {
     container.append(empty);
     return;
   }
-  entries.forEach(([ip, count]) => {
+  entries.forEach(([username, count]) => {
     const card = document.createElement("div");
     card.className = "alert-item";
     const title = document.createElement("strong");
-    title.textContent = `Suspicious IP · ${riskLevel(count)}`;
+    title.textContent = `Repeated failures for ${username} · ${riskLevel(count)} risk`;
     const detail = document.createElement("p");
-    detail.textContent = `${ip} made ${count} failed attempts, trying ${sampleRecords.filter((row) => row[2] === ip && row[3] === "Failed").reduce((users, row) => users.add(row[1]), new Set()).size} different username(s). This meets the threshold of 5.`;
+    detail.textContent = `This account has ${count} failed attempts in the sample records. The demo alert threshold is ${repeatedFailureThreshold}.`;
     card.append(title, detail);
     container.append(card);
   });
@@ -136,11 +135,10 @@ function renderRecords() {
   const tbody = document.getElementById("records-body");
   const filter = document.getElementById("result-filter").value;
   tbody.replaceChildren();
-  sampleRecords.filter((record) => filter === "All" || record[3] === filter).forEach(([time, username, ip, result]) => {
+  sampleRecords.filter((record) => filter === "All" || record[2] === filter).forEach(([time, username, result]) => {
     const row = document.createElement("tr");
     appendCell(row, time);
     appendCell(row, username);
-    appendCell(row, ip);
     appendCell(row, result, result === "Success" ? "result-success" : "result-failed");
     tbody.append(row);
   });
@@ -228,6 +226,10 @@ document.getElementById("breach-form").addEventListener("submit", async (event) 
     setResult(result, "warning", "Check the email address", "Enter an address in a valid email format and try again.");
     return;
   }
+  if (!document.getElementById("breach-consent").checked) {
+    setResult(result, "info", "Consent required", "Check the box to send this address to XposedOrNot, or leave it unchecked to keep the address in this browser.");
+    return;
+  }
   setBusy(button, true, "Checking…", "Check breaches");
   result.hidden = true;
   try {
@@ -311,6 +313,14 @@ document.getElementById("password-form").addEventListener("submit", async (event
   }
   const strength = scorePassword(password);
   const labels = ["Very weak", "Weak", "Fair", "Good", "Strong", "Very strong"];
+  if (!document.getElementById("password-exposure-consent").checked) {
+    const detail = strength.suggestions.length
+      ? `Local estimate only. ${strength.suggestions.join(" ")} No lookup was sent to HIBP.`
+      : "Local estimate only. No lookup was sent to HIBP.";
+    setResult(result, "info", `Strength estimate: ${labels[strength.score]}`, detail);
+    document.getElementById("password-input").value = "";
+    return;
+  }
   setBusy(button, true, "Checking…", "Test password");
   setResult(result, "info", `Strength estimate: ${labels[strength.score]}`, "Checking HIBP’s compromised-password corpus…");
   try {
@@ -347,7 +357,7 @@ document.getElementById("password-form").addEventListener("submit", async (event
   }
 });
 
-// Hosted authentication: Supabase's browser SDK stores and refreshes the session.
+// Hosted authentication: keep the Supabase session scoped to this browser tab.
 const authScreen = document.getElementById("auth-screen");
 const appShell = document.getElementById("app-shell");
 const authForm = document.getElementById("auth-form");
@@ -470,7 +480,12 @@ async function initializeHostedAuth() {
   try {
     const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
     supabaseClient = createClient(config.url, config.publishableKey, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+      auth: {
+        persistSession: true,
+        storage: window.sessionStorage,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
     });
     const { data: { session }, error } = await supabaseClient.auth.getSession();
     if (error) throw error;

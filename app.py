@@ -4,6 +4,9 @@ import altair as alt
 import json
 import os
 import hashlib
+import base64
+import hmac
+import html
 import re
 import smtplib
 import socket
@@ -26,12 +29,41 @@ st.set_page_config(
 
 # ── File-based user backend ───────────────────────────────────────────────────
 # Accounts are stored in users.json so they survive Streamlit reruns.
-# Passwords are hashed with SHA-256 before saving.
+# Passwords use salted PBKDF2 hashes. Legacy SHA-256 entries are upgraded after
+# a successful local sign-in.
 USERS_FILE = "users.json"
+PASSWORD_HASH_ITERATIONS = 310_000
 
 def _hash(password: str) -> str:
-    """Return SHA-256 hex digest of password."""
-    return hashlib.sha256(password.encode()).hexdigest()
+    """Return a salted, deliberately expensive PBKDF2 password hash."""
+    salt = os.urandom(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, PASSWORD_HASH_ITERATIONS
+    )
+    return "pbkdf2_sha256${}${}${}".format(
+        PASSWORD_HASH_ITERATIONS,
+        base64.b64encode(salt).decode("ascii"),
+        base64.b64encode(digest).decode("ascii"),
+    )
+
+def _verify_password(password: str, stored_hash: str) -> tuple[bool, bool]:
+    """Return (valid, needs_upgrade), supporting the prototype's old hashes."""
+    if stored_hash.startswith("pbkdf2_sha256$"):
+        try:
+            _, rounds, salt_text, digest_text = stored_hash.split("$", 3)
+            salt = base64.b64decode(salt_text, validate=True)
+            expected = base64.b64decode(digest_text, validate=True)
+            rounds = int(rounds)
+            if rounds < 100_000 or rounds > 2_000_000:
+                return False, False
+            actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, rounds)
+            return hmac.compare_digest(actual, expected), False
+        except (ValueError, TypeError):
+            return False, False
+
+    legacy_digest = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    valid = hmac.compare_digest(stored_hash, legacy_digest)
+    return valid, valid
 
 def load_users() -> dict:
     """Load users from users.json. Returns {username: hashed_password}."""
@@ -47,9 +79,16 @@ def save_users(users: dict) -> None:
         json.dump(users, f, indent=4)
 
 def check_password(username: str, password: str) -> bool:
-    """Return True if username exists and password matches."""
+    """Verify the stored hash and upgrade prototype hashes after a valid login."""
     users = load_users()
-    return username in users and users[username] == _hash(password)
+    stored_hash = users.get(username)
+    if not isinstance(stored_hash, str):
+        return False
+    valid, needs_upgrade = _verify_password(password, stored_hash)
+    if valid and needs_upgrade:
+        users[username] = _hash(password)
+        save_users(users)
+    return valid
 
 def register_user(username: str, password: str, email: str = "") -> bool:
     """
@@ -643,7 +682,7 @@ def show_signup():
 
     # ── Password fields ───────────────────────────────────────────────────────
     new_pass = st.text_input("Choose a password", key="su_pass",
-                              placeholder="Min. 6 characters", type="password")
+                              placeholder="Min. 12 characters", type="password")
     confirm  = st.text_input("Confirm password", key="su_conf",
                               placeholder="Repeat password", type="password")
 
@@ -663,8 +702,8 @@ def show_signup():
             email_ok, email_msg = validate_email(new_email)
             if not email_ok:
                 st.error(email_msg)
-            elif len(new_pass) < 6:
-                st.error("❌ Password must be at least 6 characters.")
+            elif len(new_pass) < 12:
+                st.error("❌ Password must be at least 12 characters.")
             elif new_pass != confirm:
                 st.error("❌ Passwords do not match.")
             else:
@@ -727,37 +766,36 @@ if st.session_state.active_tool != "Overview":
 
 # ── 20 fake login records ─────────────────────────────────────────────────────
 SAMPLE_RECORDS = [
-    ("2024-06-01 08:02:11", "alice",  "192.168.1.10", "Success"),
-    ("2024-06-01 08:14:33", "bob",    "192.168.1.22", "Success"),
-    ("2024-06-01 08:31:05", "carol",  "10.0.0.5",     "Success"),
-    ("2024-06-01 08:45:50", "dave",   "203.0.113.99", "Failed"),
-    ("2024-06-01 08:46:12", "admin",  "203.0.113.99", "Failed"),
-    ("2024-06-01 08:46:44", "root",   "203.0.113.99", "Failed"),
-    ("2024-06-01 08:47:01", "admin",  "203.0.113.99", "Failed"),
-    ("2024-06-01 08:47:29", "alice",  "203.0.113.99", "Failed"),
-    ("2024-06-01 09:03:18", "eve",    "172.16.0.8",   "Success"),
-    ("2024-06-01 09:15:44", "frank",  "192.168.1.44", "Success"),
-    ("2024-06-01 09:28:02", "grace",  "10.0.0.12",    "Success"),
-    ("2024-06-01 09:41:57", "henry",  "192.168.1.55", "Failed"),
-    ("2024-06-01 10:05:30", "isabel", "10.0.0.21",    "Success"),
-    ("2024-06-01 10:22:14", "jack",   "172.16.0.33",  "Success"),
-    ("2024-06-01 10:38:49", "karen",  "192.168.1.66", "Success"),
-    ("2024-06-01 11:00:05", "liam",   "10.0.0.30",    "Failed"),
-    ("2024-06-01 11:17:33", "mia",    "192.168.1.77", "Success"),
-    ("2024-06-01 11:35:20", "noah",   "172.16.0.50",  "Success"),
-    ("2024-06-01 11:52:08", "olivia", "10.0.0.44",    "Success"),
-    ("2024-06-01 12:10:47", "peter",  "192.168.1.88", "Success"),
+    ("2024-06-01 08:02:11", "alice", "Success"),
+    ("2024-06-01 08:14:33", "bob", "Success"),
+    ("2024-06-01 08:31:05", "carol", "Success"),
+    ("2024-06-01 08:45:50", "dave", "Failed"),
+    ("2024-06-01 08:46:12", "admin", "Failed"),
+    ("2024-06-01 08:46:44", "root", "Failed"),
+    ("2024-06-01 08:47:01", "admin", "Failed"),
+    ("2024-06-01 08:47:29", "alice", "Failed"),
+    ("2024-06-01 09:03:18", "eve", "Success"),
+    ("2024-06-01 09:15:44", "frank", "Success"),
+    ("2024-06-01 09:28:02", "grace", "Success"),
+    ("2024-06-01 09:41:57", "henry", "Failed"),
+    ("2024-06-01 10:05:30", "isabel", "Success"),
+    ("2024-06-01 10:22:14", "jack", "Success"),
+    ("2024-06-01 10:38:49", "karen", "Success"),
+    ("2024-06-01 11:00:05", "liam", "Failed"),
+    ("2024-06-01 11:17:33", "mia", "Success"),
+    ("2024-06-01 11:35:20", "noah", "Success"),
+    ("2024-06-01 11:52:08", "olivia", "Success"),
+    ("2024-06-01 12:10:47", "peter", "Success"),
 ]
 
-SUSPICIOUS_THRESHOLD = 5
+REPEATED_FAILURE_THRESHOLD = 2
 
-def find_suspicious_ips(records, threshold):
+def find_repeated_failures_by_user(records, threshold):
     failed_counts = {}
-    for record in records:
-        _, _, ip, result = record
+    for _, username, result in records:
         if result == "Failed":
-            failed_counts[ip] = failed_counts.get(ip, 0) + 1
-    return {ip: c for ip, c in failed_counts.items() if c >= threshold}
+            failed_counts[username] = failed_counts.get(username, 0) + 1
+    return {username: count for username, count in failed_counts.items() if count >= threshold}
 
 def get_risk_level(failed_count):
     if failed_count >= 10:
@@ -767,22 +805,13 @@ def get_risk_level(failed_count):
     else:
         return "Low"
 
-def build_alerts(records, suspicious_ips):
+def build_alerts(repeated_failures):
     alerts = []
-    for ip, count in suspicious_ips.items():
-        usernames_tried = []
-        for record in records:
-            _, username, record_ip, result = record
-            if record_ip == ip and result == "Failed" and username not in usernames_tried:
-                usernames_tried.append(username)
+    for username, count in repeated_failures.items():
         risk   = get_risk_level(count)
-        reason = (
-            f"IP {ip} made {count} failed login attempts, "
-            f"trying {len(usernames_tried)} different username(s). "
-            f"This matches a pattern of repeated credential guessing."
-        )
+        reason = f"The sample records show {count} failed attempts for this account."
         alerts.append({
-            "ip": ip, "usernames": ", ".join(usernames_tried),
+            "username": username,
             "failed": count, "risk": risk, "reason": reason,
         })
     risk_order = {"High": 0, "Medium": 1, "Low": 2}
@@ -790,16 +819,16 @@ def build_alerts(records, suspicious_ips):
     return alerts
 
 def build_dataframe(records):
-    return pd.DataFrame(records, columns=["Time", "Username", "IP Address", "Result"])
+    return pd.DataFrame(records, columns=["Time", "Username", "Result"])
 
 df             = build_dataframe(SAMPLE_RECORDS)
-suspicious_ips = find_suspicious_ips(SAMPLE_RECORDS, SUSPICIOUS_THRESHOLD)
-alerts         = build_alerts(SAMPLE_RECORDS, suspicious_ips)
+repeated_failures = find_repeated_failures_by_user(SAMPLE_RECORDS, REPEATED_FAILURE_THRESHOLD)
+alerts         = build_alerts(repeated_failures)
 
 total_logins      = len(df)
 successful_logins = len(df[df["Result"] == "Success"])
 failed_logins     = len(df[df["Result"] == "Failed"])
-suspicious_acts   = len(suspicious_ips)
+suspicious_acts   = len(repeated_failures)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DASHBOARD UI
@@ -815,9 +844,9 @@ with hdr_right:
     st.markdown("<br><br>", unsafe_allow_html=True)
     _user_email   = get_email(st.session_state.username)
     _email_line   = (f"<br><small style='color:#8b949e;font-size:0.72rem;'>"
-                     f"{_user_email}</small>") if _user_email else ""
+                     f"{html.escape(_user_email)}</small>") if _user_email else ""
     st.markdown(
-        f'<div class="user-pill">👤 {st.session_state.username}{_email_line}</div>',
+        f'<div class="user-pill">👤 {html.escape(st.session_state.username)}{_email_line}</div>',
         unsafe_allow_html=True,
     )
     if st.button("Sign Out"):
@@ -873,31 +902,28 @@ with chart_col1:
     st.altair_chart(chart1, use_container_width=True)
 
 with chart_col2:
-    st.markdown("#### Failed Logins per IP Address")
-    st.caption(
-        "Shows failed login counts per IP, sorted highest first. "
-        "Red bars are flagged as suspicious by the detection rule."
-    )
-    failed_by_ip = (
+    st.markdown("#### Failed Attempts by Account")
+    st.caption("Shows failed counts by account name in these demo records. No IP addresses are included.")
+    failed_by_user = (
         df[df["Result"] == "Failed"]
-        .groupby("IP Address").size()
+        .groupby("Username").size()
         .reset_index(name="Failed Count")
     )
     chart2 = (
-        alt.Chart(failed_by_ip)
+        alt.Chart(failed_by_user)
         .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
         .encode(
-            x=alt.X("IP Address", sort="-y",
+            x=alt.X("Username", sort="-y",
                     axis=alt.Axis(labelColor="#8b949e", titleColor="#8b949e", labelAngle=-30)),
             y=alt.Y("Failed Count",
                     axis=alt.Axis(labelColor="#8b949e", titleColor="#8b949e")),
             color=alt.condition(
-                alt.FieldOneOfPredicate(field="IP Address",
-                                        oneOf=list(suspicious_ips.keys())),
+                alt.FieldOneOfPredicate(field="Username",
+                                        oneOf=list(repeated_failures.keys())),
                 alt.value("#f85149"),
                 alt.value("#58a6ff"),
             ),
-            tooltip=["IP Address", "Failed Count"],
+            tooltip=["Username", "Failed Count"],
         )
         .properties(height=280, background="#161b22")
         .configure_view(strokeWidth=0)
@@ -910,24 +936,22 @@ st.markdown("---")
 # ── Threat Detection ──────────────────────────────────────────────────────────
 st.markdown("## 🚨 Threat Detection")
 st.write(
-    f"**Rule:** Any IP address with **{SUSPICIOUS_THRESHOLD} or more failed logins** "
-    f"is automatically flagged as suspicious."
+    f"**Demo rule:** Any account with **{REPEATED_FAILURE_THRESHOLD} or more failed logins** "
+    f"in these sample records is flagged. This is not a live Supabase log feed."
 )
 
-if len(suspicious_ips) == 0:
-    st.success("✅ No suspicious IPs detected. All activity looks normal.")
+if len(repeated_failures) == 0:
+    st.success("✅ No sample accounts meet the repeated-failure threshold.")
 else:
-    for ip, count in suspicious_ips.items():
+    for username, count in repeated_failures.items():
         st.markdown(
             f"""
             <div class="warn-box fade-card">
-                <strong>⚠️ SUSPICIOUS IP DETECTED</strong><br><br>
-                <b>IP Address:</b> <code>{ip}</code><br>
+                <strong>⚠️ REPEATED FAILURES IN SAMPLE DATA</strong><br><br>
+                <b>Account:</b> <code>{html.escape(username)}</code><br>
                 <b>Failed Login Attempts:</b> {count}<br>
-                <b>Threshold:</b> {SUSPICIOUS_THRESHOLD} attempts<br><br>
-                <b>Why flagged:</b> This IP made <b>{count} failed login attempts</b>,
-                meeting or exceeding the limit of {SUSPICIOUS_THRESHOLD}.
-                This may indicate a <b>brute-force attack</b>.
+                <b>Threshold:</b> {REPEATED_FAILURE_THRESHOLD} attempts<br><br>
+                These are demo records, not evidence of a live attack.
             </div>
             """,
             unsafe_allow_html=True,
@@ -977,8 +1001,7 @@ else:
             f"""
             <div class="alert-card">
                 <table>
-                    <tr><td>IP Address</td>     <td><code>{alert["ip"]}</code></td></tr>
-                    <tr><td>Usernames Tried</td><td>{alert["usernames"]}</td></tr>
+                    <tr><td>Account</td><td><code>{html.escape(alert["username"])}</code></td></tr>
                     <tr><td>Failed Attempts</td><td><b>{alert["failed"]}</b></td></tr>
                     <tr><td>Risk Level</td>
                         <td>{icon} <span class="{badge_class}">{alert["risk"]}</span></td></tr>
@@ -1015,7 +1038,7 @@ if st.session_state.data_loaded:
         return "color: #f85149; font-weight: 600;"
 
     def highlight_suspicious_row(row):
-        if row["IP Address"] in suspicious_ips:
+        if row["Username"] in repeated_failures:
             return ["background-color: #2d1f0e"] * len(row)
         return [""] * len(row)
 
@@ -1027,8 +1050,8 @@ if st.session_state.data_loaded:
     st.dataframe(styled_df, use_container_width=True, hide_index=True)
     shown = len(display_df)
     st.info(
-        f"📊 Showing **{shown}** of {total_logins} records "
-        f"(filter: **{result_filter}**). Orange rows come from a flagged IP."
+        f"📊 Showing **{shown}** of {total_logins} demo records "
+        f"(filter: **{result_filter}**). Orange rows have repeated failures for the same account."
     )
 else:
     st.markdown(

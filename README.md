@@ -30,7 +30,17 @@ Import this project directory in Vercel, keep the project root at this directory
 - Behind the Email and Epieos buttons open their provider websites. AlphaProtector does not call their APIs or require provider API credentials; each provider controls its own free access and limits.
 
 The previous Streamlit prototype remains in `app.py`; Vercel serves the static app from `index.html`.
+The Streamlit prototype's local file-based sign-in is for local demonstration only and is not a production authentication service. Its password hashes now use salted PBKDF2; old prototype hashes are upgraded after a successful sign-in. Use Supabase Auth for deployed accounts.
 
 ## Login dashboard data
 
-The login counts, charts, alerts, username failure counts, and records reproduce the prototype's sample events. They are not live authentication logs and do not track real users. To monitor live failed logins after deployment, connect the authentication provider's event logs to a secured backend; a static site cannot read those logs by itself.
+The login counts, charts, alerts, account failure counts, and records reproduce the prototype's sample events. They are not live authentication logs and do not track real users. The dashboard does not collect, store, or display login IP addresses. Real Supabase sign-in activity is available in the Supabase project Auth logs; exposing it in this static browser app would require a secured backend and carefully scoped access.
+
+## Data handling
+
+- The static app does not store email or password checks in an AlphaProtector database. The email breach lookup sends the entered address to XposedOrNot; the optional HIBP password lookup sends only a five-character SHA-1 hash prefix. See the in-app notes before using those tools.
+- The email lookup now requires an explicit checkbox before sending the address. Password strength can be checked locally without network access; HIBP exposure lookup requires its own separate consent checkbox.
+- Supabase browser sessions are kept in `sessionStorage` and end with the browser tab session instead of being persisted in `localStorage`.
+- Supabase processes sign-in credentials and may retain authentication/network metadata in its service logs. Vercel may also process connection metadata. This app cannot prevent those infrastructure providers from recording operational logs.
+- `supabase-config.js` may contain only the public project URL and publishable/anon key. Never expose a service-role or secret key in frontend code. Keep Supabase tables private with Row Level Security if tables are added later.
+- Local prototype account files (`users.json` and `users_meta.json`) are ignored by Git and are not served by `dev_server.py`; do not upload them or add them to a deployment.
